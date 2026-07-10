@@ -139,10 +139,12 @@ class HomeScreenController extends GetxController {
           if (songId != null) {
             final rel = (await _musicServices.getContentRelatedToSong(
                 songId, getContentHlCode()));
-            final con = rel.removeAt(0);
-            quickPicks.value =
-                QuickPicks(List<MediaItem>.from(con["contents"]));
-            middleContentTemp.addAll(rel);
+            if (rel.isNotEmpty) {
+              final con = rel.removeAt(0);
+              quickPicks.value =
+                  QuickPicks(List<MediaItem>.from(con["contents"]));
+              middleContentTemp.addAll(rel);
+            }
           }
         } catch (e) {
           printERROR(
@@ -153,9 +155,11 @@ class HomeScreenController extends GetxController {
       if (quickPicks.value.songList.isEmpty) {
         final index = homeContentListMap
             .indexWhere((element) => element['title'] == "Quick picks");
-        final con = homeContentListMap.removeAt(index);
-        quickPicks.value = QuickPicks(List<MediaItem>.from(con["contents"]),
-            title: "Quick picks");
+        if (index != -1) {
+          final con = homeContentListMap.removeAt(index);
+          quickPicks.value = QuickPicks(List<MediaItem>.from(con["contents"]),
+              title: "Quick picks");
+        }
       }
 
       middleContent.value = _setContentList(middleContentTemp);
