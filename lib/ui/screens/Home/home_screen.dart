@@ -182,7 +182,7 @@ class Body extends StatelessWidget {
                                             "retry".tr,
                                             style: TextStyle(
                                                 color: Theme.of(context)
-                                                    .canvasColor),
+                                                    .colorScheme.surface),
                                           ),
                                         ),
                                       ),
