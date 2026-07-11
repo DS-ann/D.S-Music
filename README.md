@@ -1,6 +1,6 @@
 <div align="center">
 
-# 😁This repository is trying to be maintain**
+# 😁This repository is trying to be maintained 
 Thanks to anandnet for creating this
 
 </div>
