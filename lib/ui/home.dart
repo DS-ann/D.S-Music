@@ -99,7 +99,7 @@ class Home extends StatelessWidget {
                             SizedBox(
                               height: 60,
                               child: ColoredBox(
-                                color: Theme.of(context).canvasColor,
+                                color: Theme.of(context).colorScheme.surface,
                                 child: Center(
                                     child: Padding(
                                   padding: const EdgeInsets.only(
@@ -135,7 +135,7 @@ class Home extends StatelessWidget {
                                                           .isFalse
                                                       ? Colors.white24
                                                       : Colors.white
-                                                          .withOpacity(0.8),
+                                                          .withValues(alpha: 0.8),
                                                   borderRadius:
                                                       BorderRadius.circular(20),
                                                 ),
