@@ -24,7 +24,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.27.5"   # Change if needed
+          flutter-version: "3.27.1"   # Change if needed
           cache: true
 
       - name: Flutter Pub Get
