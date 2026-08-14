@@ -45,7 +45,12 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
           ),
         ),
       );
-    } else if (title == "Videos" || title.contains("Songs")) {
+    }
+
+    // Fix: Convert title to lower case to prevent mismatching "Featured Playlists"
+    final t = title.toLowerCase();
+
+    if (t == "videos" || t.contains("songs")) {
       return isCompleteList
           ? Expanded(
               child: listViewSongVid(items,
@@ -54,21 +59,38 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
                   album: album,
                   artist: artist,
                   sc: scrollController,
-                  isArtistSongs: isArtistSongs))
+                  isArtistSongs: isArtistSongs,
+                  isCompleteList: isCompleteList))
           : SizedBox(
               height: items.length * 75.0,
-              child: listViewSongVid(items),
+              child: listViewSongVid(items, isCompleteList: isCompleteList),
             );
-    } else if (title.contains("playlists")) {
-      return listViewPlaylists(items, sc: scrollController);
-    } else if (title == "Albums" || title == "Singles") {
-      return listViewAlbums(items, sc: scrollController);
-    } else if (title.contains('Artists')) {
+    } else if (t.contains("playlists")) {
       return isCompleteList
-          ? Expanded(child: listViewArtists(items, sc: scrollController))
+          ? Expanded(
+              child: listViewPlaylists(items,
+                  sc: scrollController, isCompleteList: isCompleteList))
+          : SizedBox(
+              height: items.length * 120.0,
+              child: listViewPlaylists(items, isCompleteList: isCompleteList),
+            );
+    } else if (t.contains("albums") || t.contains("singles")) {
+      return isCompleteList
+          ? Expanded(
+              child: listViewAlbums(items,
+                  sc: scrollController, isCompleteList: isCompleteList))
+          : SizedBox(
+              height: items.length * 120.0,
+              child: listViewAlbums(items, isCompleteList: isCompleteList),
+            );
+    } else if (t.contains('artists')) {
+      return isCompleteList
+          ? Expanded(
+              child: listViewArtists(items,
+                  sc: scrollController, isCompleteList: isCompleteList))
           : SizedBox(
               height: items.length * 95.0,
-              child: listViewArtists(items),
+              child: listViewArtists(items, isCompleteList: isCompleteList),
             );
     }
     return const SizedBox.shrink();
@@ -80,13 +102,11 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
       Album? album,
       Artist? artist,
       bool isArtistSongs = false,
-      ScrollController? sc}) {
+      ScrollController? sc,
+      bool isCompleteList = true}) {
     final playerController = Get.find<PlayerController>();
     return ListView.builder(
-      padding: const EdgeInsets.only(
-        bottom: 200,
-        top: 0,
-      ),
+      padding: const EdgeInsets.only(bottom: 200, top: 0),
       addRepaintBoundaries: false,
       addAutomaticKeepAlives: false,
       controller: sc,
@@ -123,121 +143,125 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
     );
   }
 
-  Widget listViewPlaylists(List<dynamic> playlists, {ScrollController? sc}) {
-    return Expanded(
-      child: ListView.builder(
-          padding: const EdgeInsets.only(
-            bottom: 210,
-            top: 0,
-          ),
-          controller: sc,
-          itemCount: playlists.length,
-          itemExtent: 120,
-          physics: const BouncingScrollPhysics(),
-          itemBuilder: (context, index) {
-            final item = playlists[index];
-            String pTitle = "Playlist";
-            String pSubtitle = "";
-
-            try {
-              if (item is Playlist) {
-                pTitle = item.title;
-                pSubtitle = item.description ?? "";
-              } else if (item is Map) {
-                pTitle = item['title'] ?? item['name'] ?? "Playlist";
-                pSubtitle = item['description'] ?? item['subtitle'] ?? "";
-              }
-            } catch (_) {}
-
-            return wideListTile(
-              context,
-              playlist: item,
-              title: pTitle,
-              subtitle: pSubtitle,
-              subtitle2: "",
-            );
-          }),
-    );
-  }
-
-  Widget listViewAlbums(List<dynamic> albums, {ScrollController? sc}) {
-    return Expanded(
-      child: ListView.builder(
-          padding: const EdgeInsets.only(
-            bottom: 210,
-            top: 0,
-          ),
-          controller: sc,
-          itemCount: albums.length,
-          itemExtent: 120,
-          physics: const BouncingScrollPhysics(),
-          itemBuilder: (context, index) {
-            final item = albums[index];
-            String aTitle = "";
-            String artistName = "";
-            String subtitle2Str = "";
-
-            try {
-              if (item is Album) {
-                aTitle = item.title;
-                final artists = item.artists;
-if (artists != null && artists.isNotEmpty) {
-  for (dynamic a in artists.sublist(1)) {
-    // ...
-  }
-  subtitle2Str = "${artists[0]['name']} • ${item.year}";
-} else {
-                  subtitle2Str = "${item.year}";
-                }
-              } else if (item is Map) {
-                aTitle = item['title'] ?? item['name'] ?? "";
-                artistName = item['artist'] ?? "";
-                subtitle2Str = "${item['year'] ?? ''}";
-              }
-            } catch (_) {}
-
-            if (artistName.length > 16) {
-              artistName = artistName.substring(0, 16);
-            }
-
-            return wideListTile(
-              context,
-              album: item,
-              title: aTitle,
-              subtitle: artistName,
-              subtitle2: subtitle2Str,
-            );
-          }),
-    );
-  }
-
-  Widget listViewArtists(List<dynamic> artists, {ScrollController? sc}) {
+  Widget listViewPlaylists(List<dynamic> playlists,
+      {ScrollController? sc, bool isCompleteList = true}) {
+    // Fix: Removed 'Expanded' wrapping from here to avoid layout errors
     return ListView.builder(
-      padding: const EdgeInsets.only(
-        bottom: 200,
-        top: 5,
-      ),
+        padding: const EdgeInsets.only(bottom: 210, top: 0),
+        controller: sc,
+        itemCount: playlists.length,
+        // Fix: Removed 'itemExtent: 120' so invalid items shrink completely
+        physics: isCompleteList
+            ? const BouncingScrollPhysics()
+            : const NeverScrollableScrollPhysics(),
+        itemBuilder: (context, index) {
+          final item = playlists[index];
+          if (item == null) return const SizedBox.shrink();
+
+          String pTitle = "Playlist";
+          String pSubtitle = "";
+
+          if (item is Playlist) {
+            pTitle = item.title;
+            pSubtitle = item.description ?? "";
+          } else if (item is Map) {
+            pTitle = item['title'] ?? item['name'] ?? "Playlist";
+            pSubtitle = item['description'] ?? item['subtitle'] ?? "";
+          } else {
+            // Fix: Gracefully skip items that aren't playlists (no grey blocks)
+            return const SizedBox.shrink();
+          }
+
+          return wideListTile(
+            context,
+            playlist: item,
+            title: pTitle,
+            subtitle: pSubtitle,
+            subtitle2: "",
+          );
+        });
+  }
+
+  Widget listViewAlbums(List<dynamic> albums,
+      {ScrollController? sc, bool isCompleteList = true}) {
+    // Fix: Removed 'Expanded' wrapping from here
+    return ListView.builder(
+        padding: const EdgeInsets.only(bottom: 210, top: 0),
+        controller: sc,
+        itemCount: albums.length,
+        // Fix: Removed 'itemExtent: 120'
+        physics: isCompleteList
+            ? const BouncingScrollPhysics()
+            : const NeverScrollableScrollPhysics(),
+        itemBuilder: (context, index) {
+          final item = albums[index];
+          if (item == null) return const SizedBox.shrink();
+
+          String aTitle = "";
+          String artistName = "";
+          String subtitle2Str = "";
+
+          if (item is Album) {
+            aTitle = item.title;
+            // Fix: Dart Null safety fix integrated from earlier
+            final artists = item.artists;
+            if (artists != null && artists.isNotEmpty) {
+              for (dynamic a in artists.sublist(1)) {
+                artistName += "${a['name']},";
+              }
+              subtitle2Str = "${artists[0]['name']} • ${item.year}";
+            } else {
+              subtitle2Str = "${item.year}";
+            }
+          } else if (item is Map) {
+            aTitle = item['title'] ?? item['name'] ?? "";
+            artistName = item['artist'] ?? "";
+            subtitle2Str = "${item['year'] ?? ''}";
+          } else {
+            return const SizedBox.shrink();
+          }
+
+          if (artistName.length > 16) {
+            artistName = artistName.substring(0, 16);
+          }
+
+          return wideListTile(
+            context,
+            album: item,
+            title: aTitle,
+            subtitle: artistName,
+            subtitle2: subtitle2Str,
+          );
+        });
+  }
+
+  Widget listViewArtists(List<dynamic> artists,
+      {ScrollController? sc, bool isCompleteList = true}) {
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 200, top: 5),
       controller: sc,
       itemCount: artists.length,
-      itemExtent: 90,
+      // Fix: Removed 'itemExtent: 90'
       physics: isCompleteList
           ? const BouncingScrollPhysics()
           : const NeverScrollableScrollPhysics(),
       itemBuilder: (context, index) {
         final item = artists[index];
+        if (item == null) return const SizedBox.shrink();
 
         String aName = "";
         String aSubscribers = "";
 
-        try {
-          if (item is Artist) {
-            aName = item.name;
-            aSubscribers = item.subscribers ?? '';
-          } else if (item is Map) {
-            aName = item['name'] ?? item['title'] ?? "";
-            aSubscribers = item['subscribers'] ?? "";
-          }
-        } catch (_) {}
+        if (item is Artist) {
+          aName = item.name;
+          // Fix: Null safety fix integrated from earlier
+          aSubscribers = item.subscribers ?? "";
+        } else if (item is Map) {
+          aName = item['name'] ?? item['title'] ?? "";
+          aSubscribers = item['subscribers'] ?? "";
+        } else {
+          return const SizedBox.shrink();
+        }
 
         return ListTile(
           visualDensity: const VisualDensity(horizontal: -2, vertical: 2),
