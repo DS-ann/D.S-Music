@@ -102,7 +102,7 @@ class SearchResultScreenBN extends StatelessWidget {
                                   right: 10, left: 4, top: 4, bottom: 4),
                               borderColor: Colors.black,
                               labelStyle: TextStyle(
-                                color: Theme.of(context).primaryColor,
+                                color: Theme.of(context).colorScheme.primary,
                                 fontWeight: FontWeight.bold,
                               ),
                               unselectedLabelStyle: TextStyle(
