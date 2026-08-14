@@ -36,7 +36,8 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
-      return Expanded(
+      return SizedBox(
+        height: 200,
         child: Center(
           child: Text(
             "No ${title.toLowerCase().tr}!",
@@ -93,28 +94,32 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
       physics: isCompleteList
           ? const BouncingScrollPhysics()
           : const NeverScrollableScrollPhysics(),
-      itemBuilder: (context, index) => SongListTile(
-        song: items[index] as MediaItem,
-        onTap: () {
-          isArtistSongs
-              // if song is from artist then play from artist
-              ? playerController.playPlayListSong(
-                  List<MediaItem>.from(items), index,
-                  playfrom: PlaylingFrom(
-                      type: PlaylingFromType.ARTIST,
-                      name: artist?.name ?? "........."))
-              :
-              // if playlist is not null then play from playlist else play from album
-              playlist != null && album == null
-                  ? playerController.playPlayListSong(
-                      List<MediaItem>.from(items), index,
-                      playfrom: PlaylingFrom(
-                        type: PlaylingFromType.PLAYLIST,
-                        name: playlist.title,
-                      ))
-                  : playerController.pushSongToQueue(items[index] as MediaItem);
-        },
-      ),
+      itemBuilder: (context, index) {
+        final item = items[index];
+        if (item is! MediaItem) {
+          return const SizedBox.shrink();
+        }
+
+        return SongListTile(
+          song: item,
+          onTap: () {
+            isArtistSongs
+                ? playerController.playPlayListSong(
+                    List<MediaItem>.from(items), index,
+                    playfrom: PlaylingFrom(
+                        type: PlaylingFromType.ARTIST,
+                        name: artist?.name ?? "........."))
+                : playlist != null && album == null
+                    ? playerController.playPlayListSong(
+                        List<MediaItem>.from(items), index,
+                        playfrom: PlaylingFrom(
+                          type: PlaylingFromType.PLAYLIST,
+                          name: playlist.title,
+                        ))
+                    : playerController.pushSongToQueue(item);
+          },
+        );
+      },
     );
   }
 
@@ -129,11 +134,29 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
           itemCount: playlists.length,
           itemExtent: 120,
           physics: const BouncingScrollPhysics(),
-          itemBuilder: (context, index) => wideListTile(context,
-              playlist: playlists[index],
-              title: playlists[index].title,
-              subtitle: playlists[index]?.description ?? "NA",
-              subtitle2: "")),
+          itemBuilder: (context, index) {
+            final item = playlists[index];
+            String pTitle = "Playlist";
+            String pSubtitle = "";
+
+            try {
+              if (item is Playlist) {
+                pTitle = item.title;
+                pSubtitle = item.description ?? "";
+              } else if (item is Map) {
+                pTitle = item['title'] ?? item['name'] ?? "Playlist";
+                pSubtitle = item['description'] ?? item['subtitle'] ?? "";
+              }
+            } catch (_) {}
+
+            return wideListTile(
+              context,
+              playlist: item,
+              title: pTitle,
+              subtitle: pSubtitle,
+              subtitle2: "",
+            );
+          }),
     );
   }
 
@@ -149,23 +172,40 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
           itemExtent: 120,
           physics: const BouncingScrollPhysics(),
           itemBuilder: (context, index) {
+            final item = albums[index];
+            String aTitle = "";
             String artistName = "";
+            String subtitle2Str = "";
+
             try {
-              for (dynamic items in (albums[index].artists).sublist(1)) {
-                artistName = "${artistName + items['name']},";
+              if (item is Album) {
+                aTitle = item.title;
+                if (item.artists.isNotEmpty) {
+                  for (dynamic a in item.artists.sublist(1)) {
+                    artistName += "${a['name']},";
+                  }
+                  subtitle2Str = "${item.artists[0]['name']} • ${item.year}";
+                } else {
+                  subtitle2Str = "${item.year}";
+                }
+              } else if (item is Map) {
+                aTitle = item['title'] ?? item['name'] ?? "";
+                artistName = item['artist'] ?? "";
+                subtitle2Str = "${item['year'] ?? ''}";
               }
-            // ignore: empty_catches
-            } catch (e) {}
-            artistName = artistName.length > 16
-                ? artistName.substring(0, 16)
-                : artistName;
-            return wideListTile(context,
-                album: albums[index],
-                title: albums[index].title,
-                subtitle: artistName,
-                subtitle2: albums[index].artists.isEmpty
-                    ? "${albums[index].year}"
-                    : "${(albums[index].artists[0]['name'])} • ${albums[index].year}");
+            } catch (_) {}
+
+            if (artistName.length > 16) {
+              artistName = artistName.substring(0, 16);
+            }
+
+            return wideListTile(
+              context,
+              album: item,
+              title: aTitle,
+              subtitle: artistName,
+              subtitle2: subtitle2Str,
+            );
           }),
     );
   }
@@ -182,28 +222,45 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
       physics: isCompleteList
           ? const BouncingScrollPhysics()
           : const NeverScrollableScrollPhysics(),
-      itemBuilder: (context, index) => ListTile(
-        visualDensity: const VisualDensity(horizontal: -2, vertical: 2),
-        onTap: () {
-          Get.toNamed(ScreenNavigationSetup.artistScreen,
-              id: ScreenNavigationSetup.id, arguments: [false, artists[index]]);
-        },
-        contentPadding: const EdgeInsets.only(top: 0, bottom: 0, left: 5),
-        leading: ImageWidget(
-          size: 90,
-          artist: artists[index],
-        ),
-        title: Text(
-          artists[index].name,
-          maxLines: 1,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        subtitle: Text(
-          artists[index].subscribers,
-          maxLines: 2,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-      ),
+      itemBuilder: (context, index) {
+        final item = artists[index];
+
+        String aName = "";
+        String aSubscribers = "";
+
+        try {
+          if (item is Artist) {
+            aName = item.name;
+            aSubscribers = item.subscribers;
+          } else if (item is Map) {
+            aName = item['name'] ?? item['title'] ?? "";
+            aSubscribers = item['subscribers'] ?? "";
+          }
+        } catch (_) {}
+
+        return ListTile(
+          visualDensity: const VisualDensity(horizontal: -2, vertical: 2),
+          onTap: () {
+            Get.toNamed(ScreenNavigationSetup.artistScreen,
+                id: ScreenNavigationSetup.id, arguments: [false, item]);
+          },
+          contentPadding: const EdgeInsets.only(top: 0, bottom: 0, left: 5),
+          leading: ImageWidget(
+            size: 90,
+            artist: item,
+          ),
+          title: Text(
+            aName,
+            maxLines: 1,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          subtitle: Text(
+            aSubscribers,
+            maxLines: 2,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        );
+      },
     );
   }
 
@@ -213,15 +270,22 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
       required String title,
       required String subtitle,
       required String subtitle2}) {
+    final String? pId = playlist is Playlist
+        ? playlist.playlistId
+        : (playlist is Map ? playlist['playlistId'] : null);
+
+    final String? bId = album is Album
+        ? album.browseId
+        : (album is Map ? album['browseId'] : null);
+
     return InkWell(
       onTap: () {
-        if (album != null) {
+        if (album != null && bId != null) {
           Get.toNamed(ScreenNavigationSetup.albumScreen,
-              id: ScreenNavigationSetup.id, arguments: (album, album.browseId));
-        } else {
+              id: ScreenNavigationSetup.id, arguments: (album, bId));
+        } else if (playlist != null && pId != null) {
           Get.toNamed(ScreenNavigationSetup.playlistScreen,
-              id: ScreenNavigationSetup.id,
-              arguments: [playlist, playlist.playlistId]);
+              id: ScreenNavigationSetup.id, arguments: [playlist, pId]);
         }
       },
       child: SizedBox(
