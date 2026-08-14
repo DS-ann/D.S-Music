@@ -180,12 +180,13 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
             try {
               if (item is Album) {
                 aTitle = item.title;
-                if (item.artists.isNotEmpty) {
-                  for (dynamic a in item.artists.sublist(1)) {
-                    artistName += "${a['name']},";
-                  }
-                  subtitle2Str = "${item.artists[0]['name']} • ${item.year}";
-                } else {
+                final artists = item.artists;
+if (artists != null && artists.isNotEmpty) {
+  for (dynamic a in artists.sublist(1)) {
+    // ...
+  }
+  subtitle2Str = "${artists[0]['name']} • ${item.year}";
+} else {
                   subtitle2Str = "${item.year}";
                 }
               } else if (item is Map) {
@@ -231,7 +232,7 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
         try {
           if (item is Artist) {
             aName = item.name;
-            aSubscribers = item.subscribers;
+            aSubscribers = item.subscribers ?? '';
           } else if (item is Map) {
             aName = item['name'] ?? item['title'] ?? "";
             aSubscribers = item['subscribers'] ?? "";
