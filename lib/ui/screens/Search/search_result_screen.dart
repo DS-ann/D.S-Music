@@ -117,8 +117,8 @@ class Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (searchResScrController.navigationRailCurrentIndex.value == 0) {
-      return Obx(() {
+    return Obx(() {
+      if (searchResScrController.navigationRailCurrentIndex.value == 0) {
         if (searchResScrController.isResultContentFetced.isTrue &&
             searchResScrController.railItems.isEmpty) {
           return Center(
@@ -140,20 +140,28 @@ class Body extends StatelessWidget {
             child: LoadingIndicator(),
           );
         }
-      });
-    } else {
-      if (searchResScrController.isResultContentFetced.isTrue) {
+      } else {
+        if (!searchResScrController.isResultContentFetced.isTrue) {
+          return const Center(
+            child: LoadingIndicator(),
+          );
+        }
+
         final topPadding = context.isLandscape ? 50.0 : 80.0;
         final name = searchResScrController.railItems[
             searchResScrController.navigationRailCurrentIndex.value - 1];
+
+        // Safely extract non-empty, reactive items list
+        final items = List<dynamic>.from(
+            searchResScrController.separatedResultContent[name] ?? []);
+
         return SeparateTabItemWidget(
-          items: const [],
+          items: items,
           title: name,
           topPadding: topPadding,
           scrollController: searchResScrController.scrollControllers[name],
         );
       }
-    }
-    return const SizedBox.shrink();
+    });
   }
 }

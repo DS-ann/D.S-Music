@@ -137,26 +137,35 @@ class SearchResultScreenBN extends StatelessWidget {
                                   ),
                                   ...searchResScrController.railItems
                                       .map((tabName) {
-                                    if (tabName == "Songs" ||
-                                        tabName == "Videos") {
-                                      return SeparateTabItemWidget(
-                                        isResultWidget: true,
-                                        hideTitle: true,
-                                        items: const [],
-                                        title: tabName,
-                                        isCompleteList: true,
-                                        scrollController: searchResScrController
-                                            .scrollControllers[tabName],
-                                      );
-                                    } else {
-                                      return SeparateTabItemWidget(
-                                        title: tabName,
-                                        hideTitle: true,
-                                        items: const [],
-                                        scrollController: searchResScrController
-                                            .scrollControllers[tabName],
-                                      );
-                                    }
+                                    return Obx(() {
+                                      final items = List<dynamic>.from(
+                                          searchResScrController
+                                                  .separatedResultContent[
+                                              tabName] ?? []);
+
+                                      if (tabName == "Songs" ||
+                                          tabName == "Videos") {
+                                        return SeparateTabItemWidget(
+                                          isResultWidget: true,
+                                          hideTitle: true,
+                                          items: items,
+                                          title: tabName,
+                                          isCompleteList: true,
+                                          scrollController:
+                                              searchResScrController
+                                                  .scrollControllers[tabName],
+                                        );
+                                      } else {
+                                        return SeparateTabItemWidget(
+                                          title: tabName,
+                                          hideTitle: true,
+                                          items: items,
+                                          scrollController:
+                                              searchResScrController
+                                                  .scrollControllers[tabName],
+                                        );
+                                      }
+                                    });
                                   }),
                                 ],
                               ),
