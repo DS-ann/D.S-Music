@@ -59,12 +59,11 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
               height: items.length * 75.0,
               child: listViewSongVid(items),
             );
-    } else if (title.toLowerCase().contains("playlist")) {
+    } else if (title.contains("playlists")) {
       return listViewPlaylists(items, sc: scrollController);
-    } else if (title == "Albums" || title == "Singles" ||
-        title.toLowerCase().contains("album")) {
+    } else if (title == "Albums" || title == "Singles") {
       return listViewAlbums(items, sc: scrollController);
-    } else if (title.toLowerCase().contains('artist')) {
+    } else if (title.contains('Artists')) {
       return isCompleteList
           ? Expanded(child: listViewArtists(items, sc: scrollController))
           : SizedBox(
@@ -181,11 +180,11 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
             try {
               if (item is Album) {
                 aTitle = item.title;
-                if (item.artists.isNotEmpty) {
-                  for (dynamic a in item.artists.sublist(1)) {
+                if (item.artists != null && item.artists!.isNotEmpty) {
+                  for (dynamic a in item.artists!.sublist(1)) {
                     artistName += "${a['name']},";
                   }
-                  subtitle2Str = "${item.artists[0]['name']} • ${item.year}";
+                  subtitle2Str = "${item.artists![0]['name']} • ${item.year}";
                 } else {
                   subtitle2Str = "${item.year}";
                 }
@@ -232,7 +231,7 @@ class ListWidget extends StatelessWidget with RemoveSongFromPlaylistMixin {
         try {
           if (item is Artist) {
             aName = item.name;
-            aSubscribers = item.subscribers;
+            aSubscribers = item.subscribers ?? '';
           } else if (item is Map) {
             aName = item['name'] ?? item['title'] ?? "";
             aSubscribers = item['subscribers'] ?? "";
