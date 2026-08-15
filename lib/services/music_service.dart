@@ -42,11 +42,9 @@ class MusicServices extends getx.GetxService {
     }
   };
 
-  Future<void>? _initializationFuture;
-
   @override
   void onInit() {
-    _initializationFuture = init();
+    init();
     super.onInit();
   }
 
@@ -566,38 +564,9 @@ class MusicServices extends getx.GetxService {
       int limit = 30,
       bool ignoreSpelling = false,
       String? filterParams}) async {
-    // Prevent the first search from racing with initialization of the client
-    // context / visitor id. This can otherwise make the first request fail
-    // while an immediate retry succeeds.
-    try {
-      await _initializationFuture;
-    } catch (e) {
-      DebugLogger.warn(
-        _logTag,
-        'Initialization failed before search: $e. Continuing with current context.',
-      );
-    }
-
-    final data = Map<String, dynamic>.from(_context);
-    final context = data['context'];
-
-    if (context is Map) {
-      final client = context['client'];
-      if (client is Map) {
-        // Keep the same language used by the original service.
-        client['hl'] = 'en';
-      }
-    }
-
+    final data = Map.of(_context);
+    data['context']['client']['hl'] = 'en';
     data['query'] = query;
-
-    final requestedLimit = limit <= 0 ? 30 : limit;
-
-    DebugLogger.info(
-      _logTag,
-      'search() called: query="$query" filter=$filter '
-      'scope=$scope limit=$requestedLimit',
-    );
 
     final Map<String, dynamic> searchResults = {};
 
@@ -608,7 +577,7 @@ class MusicServices extends getx.GetxService {
       'community_playlists',
       'featured_playlists',
       'songs',
-      'videos'
+      'videos',
     ];
 
     if (filter != null && !filters.contains(filter)) {
@@ -627,7 +596,7 @@ class MusicServices extends getx.GetxService {
       );
     }
 
-    if (scope == scopes[1] && filter != null) {
+    if (scope == 'uploads' && filter != null) {
       throw Exception(
         'No filter can be set when searching uploads. '
         'Please unset the filter parameter when scope is set to uploads.',
@@ -635,51 +604,32 @@ class MusicServices extends getx.GetxService {
     }
 
     final params = getSearchParams(filter, scope, ignoreSpelling);
-
     if (filterParams != null || params != null) {
       data['params'] = filterParams ?? params;
     }
 
     dynamic response;
-
     try {
       response = (await _sendRequest("search", data)).data;
-    } catch (e, stack) {
-      DebugLogger.warn(
-        _logTag,
-        'Search request failed for "$query": $e\n$stack',
-      );
+    } catch (e) {
+      DebugLogger.warn(_logTag, 'Search request failed: $e');
       return searchResults;
     }
 
-    if (response is! Map) {
-      DebugLogger.warn(
-        _logTag,
-        'Search response is not a Map: ${response.runtimeType}',
-      );
-      return searchResults;
-    }
-
-    if (response['contents'] == null) {
-      DebugLogger.warn(
-        _logTag,
-        'Search response has no contents for "$query".',
-      );
+    if (response is! Map || response['contents'] == null) {
+      DebugLogger.warn(_logTag, 'Search response has no contents.');
       return searchResults;
     }
 
     dynamic results;
-    final contents = response['contents'];
 
+    final contents = response['contents'];
     if (contents is Map &&
         contents['tabbedSearchResultsRenderer'] is Map) {
-      final tabs = nav(
-        contents,
-        ['tabbedSearchResultsRenderer', 'tabs'],
-      );
+      final tabs =
+          contents['tabbedSearchResultsRenderer']['tabs'];
 
       if (tabs is! List || tabs.isEmpty) {
-        DebugLogger.warn(_logTag, 'Search response contains no tabs.');
         return searchResults;
       }
 
@@ -687,10 +637,6 @@ class MusicServices extends getx.GetxService {
           scope == null || filter != null ? 0 : scopes.indexOf(scope) + 1;
 
       if (tabIndex < 0 || tabIndex >= tabs.length) {
-        DebugLogger.warn(
-          _logTag,
-          'Invalid search tab index=$tabIndex, tabs=${tabs.length}',
-        );
         return searchResults;
       }
 
@@ -702,7 +648,7 @@ class MusicServices extends getx.GetxService {
       results = contents;
     }
 
-    // Search chips.
+    // Search chips are returned only for an unfiltered search.
     if (filter == null) {
       final searchChips = nav(
         results,
@@ -712,49 +658,59 @@ class MusicServices extends getx.GetxService {
       searchResults['searchEndpoint'] = <String, dynamic>{};
 
       if (searchChips is List) {
-        for (final chipsItemRenderer in searchChips) {
-          if (chipsItemRenderer is! Map) continue;
+        for (final chipRenderer in searchChips) {
+          if (chipRenderer is! Map) continue;
 
-          final chip = chipsItemRenderer['chipCloudChipRenderer'];
+          final chip = chipRenderer['chipCloudChipRenderer'];
           if (chip is! Map) continue;
 
           final chipText = nav(chip, ['text', 'runs', 0, 'text']);
           if (chipText == null) continue;
 
-          final chipParams = nav(
+          searchResults['searchEndpoint'][chipText.toString()] = nav(
             chip,
             ['navigationEndpoint', 'searchEndpoint', 'params'],
           );
-
-          searchResults['searchEndpoint'][chipText.toString()] = chipParams;
         }
       }
     }
 
-    results = nav(results, ['sectionListRenderer', 'contents']);
+    final sectionContents = nav(
+      results,
+      ['sectionListRenderer', 'contents'],
+    );
 
-    // IMPORTANT:
-    // Do not treat a single itemSectionRenderer as "no results".
-    // A valid search can contain exactly one result.
-    if (results is! List || results.isEmpty) {
+    if (sectionContents is! List || sectionContents.isEmpty) {
       DebugLogger.info(
         _logTag,
-        'No searchable sections found for "$query".',
+        'Search "$query" returned no section contents.',
       );
       return searchResults;
     }
 
-    String? type;
-    var acceptedCount = 0;
-    var skippedCount = 0;
-    var duplicateCount = 0;
-    var shelfIndex = 0;
+    /*
+     * IMPORTANT:
+     *
+     * A current YouTube Music search response can contain:
+     *
+     * sectionListRenderer
+     *   └── contents[]
+     *        └── itemSectionRenderer
+     *             └── contents[]
+     *                  └── musicResponsiveListItemRenderer
+     *
+     * The old implementation extracted only contents[0]. That caused
+     * filtered tabs such as Artists/Albums/Playlists to return 1 item even
+     * when the response contained many items.
+     *
+     * We therefore parse EVERY musicResponsiveListItemRenderer.
+     */
 
-    // Avoid adding the same result more than once when YouTube Music repeats
-    // it in different shelves.
+    final requestedLimit = limit <= 0 ? 30 : limit;
     final seenIds = <String>{};
+    var acceptedCount = 0;
 
-    String? itemId(Map item) {
+    String? getItemId(Map item) {
       const directKeys = [
         'videoId',
         'browseId',
@@ -767,41 +723,34 @@ class MusicServices extends getx.GetxService {
 
       for (final key in directKeys) {
         final value = item[key];
-        if (value != null && value.toString().trim().isNotEmpty) {
+        if (value != null && value.toString().isNotEmpty) {
           return '$key:$value';
         }
       }
 
       final endpoint = item['navigationEndpoint'];
-
       if (endpoint is Map) {
-        final watchEndpoint = endpoint['watchEndpoint'];
-
-        if (watchEndpoint is Map && watchEndpoint['videoId'] != null) {
-          return 'videoId:${watchEndpoint['videoId']}';
+        final watch = endpoint['watchEndpoint'];
+        if (watch is Map && watch['videoId'] != null) {
+          return 'videoId:${watch['videoId']}';
         }
 
-        final browseEndpoint = endpoint['browseEndpoint'];
-
-        if (browseEndpoint is Map && browseEndpoint['browseId'] != null) {
-          return 'browseId:${browseEndpoint['browseId']}';
+        final browse = endpoint['browseEndpoint'];
+        if (browse is Map && browse['browseId'] != null) {
+          return 'browseId:${browse['browseId']}';
         }
       }
 
       return null;
     }
 
-    void addToBucket(
-      String bucket,
-      dynamic typed,
-      Map rawItem,
-    ) {
+    void addResult(String bucket, dynamic item, Map raw) {
       if (acceptedCount >= requestedLimit) return;
 
-      final id = itemId(rawItem);
+      final id = getItemId(raw);
 
+      // Deduplicate only when the API gives us a stable ID.
       if (id != null && !seenIds.add(id)) {
-        duplicateCount++;
         return;
       }
 
@@ -810,270 +759,127 @@ class MusicServices extends getx.GetxService {
         () => <dynamic>[],
       ) as List<dynamic>;
 
-      list.add(typed);
+      list.add(item);
       acceptedCount++;
     }
 
-    for (final res in results) {
+    for (final section in sectionContents) {
       if (acceptedCount >= requestedLimit) break;
+      if (section is! Map) continue;
 
-      if (res is! Map) {
-        skippedCount++;
-        shelfIndex++;
-        continue;
-      }
-
-      Map<String, dynamic>? rawItem;
-
-      // Current YouTube Music search result structure.
-      final itemSection = res['itemSectionRenderer'];
+      final itemSection = section['itemSectionRenderer'];
 
       if (itemSection is Map &&
           itemSection['contents'] is List) {
         final inner = itemSection['contents'] as List;
 
         for (final entry in inner) {
+          if (acceptedCount >= requestedLimit) break;
           if (entry is! Map) continue;
 
           final renderer =
               entry['musicResponsiveListItemRenderer'];
 
-          if (renderer is Map) {
-            rawItem = Map<String, dynamic>.from(renderer);
-            break;
-          }
-        }
-      } else if (res['musicCardShelfRenderer'] is Map) {
-        // Top-result cards have a different structure. Do not incorrectly
-        // interpret them as "no results".
-        shelfIndex++;
-        continue;
-      } else {
-        // Legacy shelf format.
-        final unwrapped = _unwrapShelf(res);
-        final shelfBody = unwrapped?.$2;
+          if (renderer is! Map) continue;
 
-        if (unwrapped != null && shelfBody != null) {
-          rawItem = _extractSingleItem(
-            Map<String, dynamic>.from(shelfBody),
-            unwrapped.$1!,
-          );
-        }
-      }
+          final raw = Map<String, dynamic>.from(renderer);
 
-      if (rawItem == null) {
-        skippedCount++;
-        shelfIndex++;
-        continue;
-      }
-
-      // Filtered searches are returned in a different structure from the
-      // main search. In particular, modern YouTube Music commonly puts each
-      // result inside:
-      //
-      // itemSectionRenderer -> contents ->
-      // musicResponsiveListItemRenderer
-      //
-      // _unwrapShelf() cannot extract that structure as a shelf, so using
-      // only _unwrapShelf() here makes every filtered tab appear empty.
-      if (filter != null) {
-        const displayNames = <String, String>{
-          'songs': 'Songs',
-          'videos': 'Videos',
-          'albums': 'Albums',
-          'artists': 'Artists',
-          'playlists': 'Playlists',
-          'community_playlists': 'Community playlists',
-          'featured_playlists': 'Featured playlists',
-        };
-
-        final bucketName = displayNames[filter] ?? filter;
-        final existing = searchResults.putIfAbsent(
-          bucketName,
-          () => <dynamic>[],
-        ) as List<dynamic>;
-
-        // IMPORTANT:
-        // A filtered itemSectionRenderer can contain MANY
-        // musicResponsiveListItemRenderer entries. The old code extracted
-        // only the first one, which is why an Artists/Albums/Playlists tab
-        // could contain 11+ results in the response but display only 1.
-        final itemSection = res['itemSectionRenderer'];
-
-        if (itemSection is Map && itemSection['contents'] is List) {
-          final sectionContents = itemSection['contents'] as List;
-
-          var parsedFromSection = 0;
-
-          for (final entry in sectionContents) {
-            if (acceptedCount >= requestedLimit) break;
-            if (entry is! Map) continue;
-
-            final renderer =
-                entry['musicResponsiveListItemRenderer'];
-
-            if (renderer is! Map) continue;
-
-            final typed = parseSearchResult(
-              Map<String, dynamic>.from(renderer),
-              const ['artist', 'playlist', 'song', 'video', 'station'],
-              null,
-              'mixed',
-            );
-
-            if (typed == null) {
-              skippedCount++;
-              continue;
-            }
-
-            final id = itemId(renderer);
-
-            if (id != null && !seenIds.add(id)) {
-              duplicateCount++;
-              continue;
-            }
-
-            // If there is no stable ID, retain the item. The parser has
-            // already validated it, and dropping it would under-count results.
-            existing.add(typed);
-            acceptedCount++;
-            parsedFromSection++;
-          }
-
-          DebugLogger.info(
-            _logTag,
-            'Filtered "$bucketName": parsed $parsedFromSection '
-            'items from itemSectionRenderer',
-          );
-
-          shelfIndex++;
-          continue;
-        }
-
-        // If the single item was supplied by another response shape, parse it
-        // as a fallback.
-        if (rawItem != null) {
           final typed = parseSearchResult(
-            rawItem,
+            raw,
             const ['artist', 'playlist', 'song', 'video', 'station'],
             null,
             'mixed',
           );
 
-          if (typed != null) {
-            final id = itemId(rawItem);
+          if (typed == null) continue;
 
-            if (id == null || seenIds.add(id)) {
-              if (acceptedCount < requestedLimit) {
-                existing.add(typed);
-                acceptedCount++;
-              }
-            } else {
-              duplicateCount++;
+          if (filter != null) {
+            // The filtered endpoint is already constrained to the requested
+            // type. Always store it under the UI's expected title.
+            final bucket = _searchFilterToTitle(filter);
+
+            if (bucket != null) {
+              addResult(bucket, typed, raw);
             }
           } else {
-            skippedCount++;
-          }
+            final bucket = classifySearchResultBucket(raw);
+            if (bucket == null) continue;
 
-          shelfIndex++;
-          continue;
+            final finalBucket = bucket == 'Featured playlists'
+                ? (refinePlaylistBucket(raw) ?? 'Featured playlists')
+                : bucket;
+
+            addResult(finalBucket, typed, raw);
+          }
         }
 
-        // Legacy filtered shelf fallback.
-        final unwrapped = _unwrapShelf(res);
-        final shelfBody = unwrapped?.$2;
+        continue;
+      }
 
-        if (unwrapped != null &&
-            shelfBody != null &&
-            shelfBody['contents'] is List) {
-          final mixedItems = parseSearchResults(
-            shelfBody['contents'],
-            const ['artist', 'playlist', 'song', 'video', 'station'],
-            type,
-            'mixed',
-          );
+      // Top-result card is rendered separately and should not be counted as
+      // one of the regular result lists.
+      if (section['musicCardShelfRenderer'] is Map) {
+        continue;
+      }
 
-          for (final item in mixedItems) {
+      // Legacy shelf structure.
+      final unwrapped = _unwrapShelf(section);
+      final shelfBody = unwrapped?.$2;
+
+      if (unwrapped != null &&
+          shelfBody != null &&
+          shelfBody['contents'] is List) {
+        final parsed = parseSearchResults(
+          shelfBody['contents'],
+          const ['artist', 'playlist', 'song', 'video', 'station'],
+          null,
+          'mixed',
+        );
+
+        final bucket = filter != null
+            ? _searchFilterToTitle(filter)
+            : (nav(shelfBody, title_text)?.toString() ?? 'mixed');
+
+        if (bucket != null) {
+          for (final item in parsed) {
             if (acceptedCount >= requestedLimit) break;
 
-            final fallbackId = item.toString();
-            if (!seenIds.add('typed:$fallbackId')) {
-              duplicateCount++;
-              continue;
-            }
+            // Legacy parsed objects may not expose their source ID here.
+            // Keep them rather than incorrectly dropping valid results.
+            final list = searchResults.putIfAbsent(
+              bucket,
+              () => <dynamic>[],
+            ) as List<dynamic>;
 
-            existing.add(item);
+            list.add(item);
             acceptedCount++;
           }
         }
-
-        shelfIndex++;
-        continue;
       }
-
-      final typed = parseSearchResult(
-            rawItem,
-            const ['artist', 'playlist', 'song', 'video', 'station'],
-            null,
-            'mixed',
-          );
-
-          if (typed != null) {
-            addToBucket(filter, typed, rawItem);
-          } else {
-            skippedCount++;
-          }
-        }
-
-        shelfIndex++;
-        continue;
-      }
-
-      final typed = parseSearchResult(
-        rawItem,
-        const ['artist', 'playlist', 'song', 'video', 'station'],
-        null,
-        'mixed',
-      );
-
-      if (typed == null) {
-        skippedCount++;
-        shelfIndex++;
-        continue;
-      }
-
-      final bucket = classifySearchResultBucket(rawItem);
-
-      if (bucket == null) {
-        skippedCount++;
-        shelfIndex++;
-        continue;
-      }
-
-      final finalBucket = bucket == 'Featured playlists'
-          ? (refinePlaylistBucket(rawItem) ?? 'Featured playlists')
-          : bucket;
-
-      addToBucket(finalBucket, typed, rawItem);
-      shelfIndex++;
     }
 
-    final summary = <String, int>{};
-
-    searchResults.forEach((key, value) {
-      if (key == 'searchEndpoint' || key == 'params') return;
-
-      summary[key] = value is List ? value.length : 0;
-    });
-
-    DebugLogger.info(
-      _logTag,
-      'search "$query": accepted=$acceptedCount '
-      'skipped=$skippedCount duplicates=$duplicateCount '
-      'requested=$requestedLimit counts=$summary',
-    );
-
     return searchResults;
+  }
+
+  String? _searchFilterToTitle(String filter) {
+    switch (filter) {
+      case 'songs':
+        return 'Songs';
+      case 'videos':
+        return 'Videos';
+      case 'albums':
+        return 'Albums';
+      case 'artists':
+        return 'Artists';
+      case 'playlists':
+        return 'Playlists';
+      case 'community_playlists':
+        return 'Community playlists';
+      case 'featured_playlists':
+        return 'Featured playlists';
+      default:
+        return null;
+    }
   }
 
   /// Resolves an element from `sectionListRenderer.contents` to the actual
