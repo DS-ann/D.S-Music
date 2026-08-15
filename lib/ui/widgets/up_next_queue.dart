@@ -27,7 +27,7 @@ class UpNextQueue extends StatelessWidget {
           footer: SizedBox(height: Get.mediaQuery.padding.bottom),
           scrollController:
               isQueueInSlidePanel ? playerController.scrollController : null,
-          onReorderItem: (int oldIndex, int newIndex) {
+          onReorder: (int oldIndex, int newIndex) {
             if (playerController.isShuffleModeEnabled.isTrue) {
               ScaffoldMessenger.of(Get.context!).showSnackBar(snackbar(
                   Get.context!, "queuerearrangingDeniedMsg".tr,
@@ -137,7 +137,7 @@ class UpNextQueue extends StatelessWidget {
                                       .textTheme
                                       .titleMedium!
                                       .color!
-                                      .withValues(alpha: 0.35))
+                                      .withOpacity(0.35))
                           : Theme.of(homeScaffoldContext).textTheme.titleSmall,
                     ),
                     trailing: ReorderableDragStartListener(
