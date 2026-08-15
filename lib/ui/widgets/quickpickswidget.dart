@@ -15,13 +15,12 @@ class QuickPicksWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (content.songList.isEmpty) return const SizedBox.shrink();
     final PlayerController playerController = Get.find<PlayerController>();
-    return SizedBox(
-      height: 340,
-      width: double.infinity,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -29,7 +28,8 @@ class QuickPicksWidget extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               )),
           const SizedBox(height: 10),
-          Expanded(
+          SizedBox(
+            height: 280,
             child: Scrollbar(
               thickness: GetPlatform.isDesktop ? null : 0,
               controller: scrollController,
@@ -131,9 +131,8 @@ class QuickPicksWidget extends StatelessWidget {
                   }),
             ),
           ),
-          const SizedBox(height: 20)
+          const SizedBox(height: 8)
         ],
-      ),
-    );
+      );
   }
 }

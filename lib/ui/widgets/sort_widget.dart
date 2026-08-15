@@ -83,7 +83,7 @@ class SortWidget extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(15),
         ),
@@ -286,7 +286,8 @@ class SortWidget extends StatelessWidget {
                   //     Theme.of(context).scaffoldBackgroundColor.withAlpha(125),
                   child: ColoredBox(
                     color: Theme.of(context)
-                        .scaffoldBackgroundColor
+                        .colorScheme
+                        .surface
                         .withAlpha(125),
                     child: ModifiedTextField(
                       controller: controller.textEditingController,

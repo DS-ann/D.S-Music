@@ -106,7 +106,7 @@ class RestoreDialog extends StatelessWidget {
                                     ? "restartApp".tr
                                     : "restore".tr,
                                 style: TextStyle(
-                                    color: Theme.of(context).canvasColor),
+                                    color: Theme.of(context).colorScheme.surface),
                               ),
                             ),
                           ),

@@ -110,7 +110,7 @@ class ContentListItem extends StatelessWidget {
                         height: 120,
                         width: 120,
                         decoration: BoxDecoration(
-                            color: Theme.of(context).primaryColorLight,
+                            color: Theme.of(context).colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(10)),
                         child: Center(
                             child: Icon(

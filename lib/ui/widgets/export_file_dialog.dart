@@ -95,7 +95,7 @@ class ExportFileDialog extends StatelessWidget {
                                 ? "close".tr
                                 : "export".tr,
                             style:
-                                TextStyle(color: Theme.of(context).canvasColor),
+                                TextStyle(color: Theme.of(context).colorScheme.surface),
                           ),
                         ),
                       ),

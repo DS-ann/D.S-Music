@@ -102,7 +102,7 @@ class LinkPiped extends StatelessWidget {
                           child: Text(
                             "link".tr,
                             style:
-                                TextStyle(color: Theme.of(context).canvasColor),
+                                TextStyle(color: Theme.of(context).colorScheme.surface),
                           ),
                         ),
                       )),
