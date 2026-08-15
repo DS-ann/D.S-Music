@@ -867,9 +867,119 @@ class MusicServices extends getx.GetxService {
         continue;
       }
 
-      // For filtered searches, parse all valid items from the shelf rather
-      // than artificially limiting each category to 10.
+      // Filtered searches are returned in a different structure from the
+      // main search. In particular, modern YouTube Music commonly puts each
+      // result inside:
+      //
+      // itemSectionRenderer -> contents ->
+      // musicResponsiveListItemRenderer
+      //
+      // _unwrapShelf() cannot extract that structure as a shelf, so using
+      // only _unwrapShelf() here makes every filtered tab appear empty.
       if (filter != null) {
+        const displayNames = <String, String>{
+          'songs': 'Songs',
+          'videos': 'Videos',
+          'albums': 'Albums',
+          'artists': 'Artists',
+          'playlists': 'Playlists',
+          'community_playlists': 'Community playlists',
+          'featured_playlists': 'Featured playlists',
+        };
+
+        final bucketName = displayNames[filter] ?? filter;
+        final existing = searchResults.putIfAbsent(
+          bucketName,
+          () => <dynamic>[],
+        ) as List<dynamic>;
+
+        // IMPORTANT:
+        // A filtered itemSectionRenderer can contain MANY
+        // musicResponsiveListItemRenderer entries. The old code extracted
+        // only the first one, which is why an Artists/Albums/Playlists tab
+        // could contain 11+ results in the response but display only 1.
+        final itemSection = res['itemSectionRenderer'];
+
+        if (itemSection is Map && itemSection['contents'] is List) {
+          final sectionContents = itemSection['contents'] as List;
+
+          var parsedFromSection = 0;
+
+          for (final entry in sectionContents) {
+            if (acceptedCount >= requestedLimit) break;
+            if (entry is! Map) continue;
+
+            final renderer =
+                entry['musicResponsiveListItemRenderer'];
+
+            if (renderer is! Map) continue;
+
+            final typed = parseSearchResult(
+              Map<String, dynamic>.from(renderer),
+              const ['artist', 'playlist', 'song', 'video', 'station'],
+              null,
+              'mixed',
+            );
+
+            if (typed == null) {
+              skippedCount++;
+              continue;
+            }
+
+            final id = itemId(renderer);
+
+            if (id != null && !seenIds.add(id)) {
+              duplicateCount++;
+              continue;
+            }
+
+            // If there is no stable ID, retain the item. The parser has
+            // already validated it, and dropping it would under-count results.
+            existing.add(typed);
+            acceptedCount++;
+            parsedFromSection++;
+          }
+
+          DebugLogger.info(
+            _logTag,
+            'Filtered "$bucketName": parsed $parsedFromSection '
+            'items from itemSectionRenderer',
+          );
+
+          shelfIndex++;
+          continue;
+        }
+
+        // If the single item was supplied by another response shape, parse it
+        // as a fallback.
+        if (rawItem != null) {
+          final typed = parseSearchResult(
+            rawItem,
+            const ['artist', 'playlist', 'song', 'video', 'station'],
+            null,
+            'mixed',
+          );
+
+          if (typed != null) {
+            final id = itemId(rawItem);
+
+            if (id == null || seenIds.add(id)) {
+              if (acceptedCount < requestedLimit) {
+                existing.add(typed);
+                acceptedCount++;
+              }
+            } else {
+              duplicateCount++;
+            }
+          } else {
+            skippedCount++;
+          }
+
+          shelfIndex++;
+          continue;
+        }
+
+        // Legacy filtered shelf fallback.
         final unwrapped = _unwrapShelf(res);
         final shelfBody = unwrapped?.$2;
 
@@ -883,19 +993,10 @@ class MusicServices extends getx.GetxService {
             'mixed',
           );
 
-          final category =
-              nav(shelfBody, title_text)?.toString() ?? filter;
-
-          final existing = searchResults.putIfAbsent(
-            category,
-            () => <dynamic>[],
-          ) as List<dynamic>;
-
           for (final item in mixedItems) {
             if (acceptedCount >= requestedLimit) break;
 
             final fallbackId = item.toString();
-
             if (!seenIds.add('typed:$fallbackId')) {
               duplicateCount++;
               continue;
@@ -904,9 +1005,13 @@ class MusicServices extends getx.GetxService {
             existing.add(item);
             acceptedCount++;
           }
-        } else {
-          // If the filtered result itself is parseable, don't throw it away.
-          final typed = parseSearchResult(
+        }
+
+        shelfIndex++;
+        continue;
+      }
+
+      final typed = parseSearchResult(
             rawItem,
             const ['artist', 'playlist', 'song', 'video', 'station'],
             null,
