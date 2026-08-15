@@ -565,321 +565,326 @@ class MusicServices extends getx.GetxService {
       bool ignoreSpelling = false,
       String? filterParams}) async {
     final data = Map.of(_context);
-    data['context']['client']['hl'] = 'en';
+    data['context']['client']["hl"] = 'en';
     data['query'] = query;
 
-    final Map<String, dynamic> searchResults = {};
+    DebugLogger.info(
+      _logTag,
+      'search() called: query="$query" filter=$filter scope=$scope limit=$limit',
+    );
 
-    const filters = [
+    final Map<String, dynamic> searchResults = {};
+    final filters = [
       'albums',
       'artists',
       'playlists',
       'community_playlists',
       'featured_playlists',
       'songs',
-      'videos',
+      'videos'
     ];
 
     if (filter != null && !filters.contains(filter)) {
       throw Exception(
-        'Invalid filter provided. Please use one of the following filters '
-        'or leave out the parameter: ${filters.join(', ')}',
-      );
+          'Invalid filter provided. Please use one of the following filters or leave out the parameter: ${filters.join(', ')}');
     }
 
-    const scopes = ['library', 'uploads'];
+    final scopes = ['library', 'uploads'];
 
     if (scope != null && !scopes.contains(scope)) {
       throw Exception(
-        'Invalid scope provided. Please use one of the following scopes '
-        'or leave out the parameter: ${scopes.join(', ')}',
-      );
+          'Invalid scope provided. Please use one of the following scopes or leave out the parameter: ${scopes.join(', ')}');
     }
 
-    if (scope == 'uploads' && filter != null) {
+    if (scope == scopes[1] && filter != null) {
       throw Exception(
-        'No filter can be set when searching uploads. '
-        'Please unset the filter parameter when scope is set to uploads.',
-      );
+          'No filter can be set when searching uploads. Please unset the filter parameter when scope is set to uploads.');
     }
 
     final params = getSearchParams(filter, scope, ignoreSpelling);
+
     if (filterParams != null || params != null) {
       data['params'] = filterParams ?? params;
     }
 
-    dynamic response;
-    try {
-      response = (await _sendRequest("search", data)).data;
-    } catch (e) {
-      DebugLogger.warn(_logTag, 'Search request failed: $e');
-      return searchResults;
-    }
+    final response = (await _sendRequest("search", data)).data;
 
-    if (response is! Map || response['contents'] == null) {
-      DebugLogger.warn(_logTag, 'Search response has no contents.');
+    DebugLogger.info(
+      _logTag,
+      'response received: top-level keys=${response.keys.toList()} '
+      'hasContents=${response['contents'] != null}',
+    );
+
+    if (response['contents'] == null) {
+      DebugLogger.warn(_logTag, 'response.contents is null, returning empty result');
       return searchResults;
     }
 
     dynamic results;
 
-    final contents = response['contents'];
-    if (contents is Map &&
-        contents['tabbedSearchResultsRenderer'] is Map) {
-      final tabs =
-          contents['tabbedSearchResultsRenderer']['tabs'];
-
-      if (tabs is! List || tabs.isEmpty) {
-        return searchResults;
-      }
-
+    if ((response['contents']).containsKey('tabbedSearchResultsRenderer')) {
       final tabIndex =
           scope == null || filter != null ? 0 : scopes.indexOf(scope) + 1;
-
-      if (tabIndex < 0 || tabIndex >= tabs.length) {
-        return searchResults;
-      }
-
-      results = nav(
-        tabs[tabIndex],
-        ['tabRenderer', 'content'],
-      );
+      results = response['contents']['tabbedSearchResultsRenderer']['tabs']
+          [tabIndex]['tabRenderer']['content'];
     } else {
-      results = contents;
+      results = response['contents'];
     }
 
-    // Search chips are returned only for an unfiltered search.
+    // Search Chips
+    /*
+    {
+      "searchEndpoint": {
+        "Songs": "Eg-KAQwIARAAGAMQCRAFEAAYASgB",
+        "Videos": "Eg-KAQwIARAAGAMQCRAFEAAYASgB",
+        "Albums": "Eg-KAQwIARAAGAMQCRAFEAAYASgB",
+        "Artists": "Eg-KAQwIARAAGAMQCRAFEAAYASgB",
+        "Playlists": "Eg-KAQwIARAAGAMQCRAFEAAYASgB",
+        "Community playlists": "Eg-KAQwIARAAGAMQCRAFEAAYASgB",
+        "Featured playlists": "Eg-KAQwIARAAGAMQCRAFEAAYASgB"
+      }
+     */
     if (filter == null) {
-      final searchChips = nav(
-        results,
-        ['sectionListRenderer', 'header', 'chipCloudRenderer', 'chips'],
-      );
+      final searchChips = nav(results,
+          ['sectionListRenderer', 'header', "chipCloudRenderer", "chips"]);
 
-      searchResults['searchEndpoint'] = <String, dynamic>{};
-
-      if (searchChips is List) {
-        for (final chipRenderer in searchChips) {
-          if (chipRenderer is! Map) continue;
-
-          final chip = chipRenderer['chipCloudChipRenderer'];
-          if (chip is! Map) continue;
-
+      searchResults['searchEndpoint'] = {};
+      if (searchChips != null) {
+        for (dynamic chipsItemRenderer in searchChips) {
+          final chip = chipsItemRenderer['chipCloudChipRenderer'];
           final chipText = nav(chip, ['text', 'runs', 0, 'text']);
-          if (chipText == null) continue;
-
-          searchResults['searchEndpoint'][chipText.toString()] = nav(
-            chip,
-            ['navigationEndpoint', 'searchEndpoint', 'params'],
-          );
+          searchResults['searchEndpoint'][chipText] =
+              nav(chip, ['navigationEndpoint', 'searchEndpoint', 'params']);
         }
       }
-    }
 
-    final sectionContents = nav(
-      results,
-      ['sectionListRenderer', 'contents'],
-    );
-
-    if (sectionContents is! List || sectionContents.isEmpty) {
       DebugLogger.info(
         _logTag,
-        'Search "$query" returned no section contents.',
+        'searchEndpoint chips: ${searchResults['searchEndpoint'].keys.toList()}',
+      );
+
+      // Note: we used to add empty "Community playlists" and
+      // "Featured playlists" buckets here so the rail tabs would always
+      // show those options. The rail tabs already drive their own filtered
+      // searches, so we no longer pre-create empty sections. The main view
+      // now only shows categories that actually have items in them.
+    }
+
+    /// End Search Chips
+
+    results = nav(results, ['sectionListRenderer', 'contents']);
+
+    DebugLogger.info(
+      _logTag,
+      'sectionListRenderer.contents count=${results?.length}',
+    );
+
+    if (results.length == 1 && results[0]['itemSectionRenderer'] != null) {
+      DebugLogger.warn(
+        _logTag,
+        'response is a single itemSectionRenderer (probably "no results"). '
+        'Returning empty map.',
       );
       return searchResults;
     }
 
-    /*
-     * IMPORTANT:
-     *
-     * A current YouTube Music search response can contain:
-     *
-     * sectionListRenderer
-     *   └── contents[]
-     *        └── itemSectionRenderer
-     *             └── contents[]
-     *                  └── musicResponsiveListItemRenderer
-     *
-     * The old implementation extracted only contents[0]. That caused
-     * filtered tabs such as Artists/Albums/Playlists to return 1 item even
-     * when the response contained many items.
-     *
-     * We therefore parse EVERY musicResponsiveListItemRenderer.
-     */
-
-    final requestedLimit = limit <= 0 ? 30 : limit;
-    final seenIds = <String>{};
-    var acceptedCount = 0;
-
-    String? getItemId(Map item) {
-      const directKeys = [
-        'videoId',
-        'browseId',
-        'playlistId',
-        'albumId',
-        'artistId',
-        'channelId',
-        'entityId',
-      ];
-
-      for (final key in directKeys) {
-        final value = item[key];
-        if (value != null && value.toString().isNotEmpty) {
-          return '$key:$value';
+    // Structural summary of every element in `sectionListRenderer.contents`.
+    // This makes it obvious what the API actually returns — what kind of
+    // renderer each element is, and what its title (if any) is.
+    final structureBuf = StringBuffer('sectionListRenderer.contents structure:\n');
+    for (var i = 0; i < results.length; i++) {
+      final entry = results[i];
+      if (entry is Map) {
+        final keys = entry.keys.map((e) => e.toString()).toList();
+        // Try to find any title in this element for context.
+        String? title;
+        for (final k in keys) {
+          final v = entry[k];
+          if (v is Map) {
+            final t = nav(v, title_text);
+            if (t != null) {
+              title = t.toString();
+              break;
+            }
+          }
         }
+        structureBuf.writeln('  [$i] keys=$keys title=${title ?? "(none)"}');
+      } else {
+        structureBuf.writeln('  [$i] (not a Map) type=${entry.runtimeType}');
       }
-
-      final endpoint = item['navigationEndpoint'];
-      if (endpoint is Map) {
-        final watch = endpoint['watchEndpoint'];
-        if (watch is Map && watch['videoId'] != null) {
-          return 'videoId:${watch['videoId']}';
-        }
-
-        final browse = endpoint['browseEndpoint'];
-        if (browse is Map && browse['browseId'] != null) {
-          return 'browseId:${browse['browseId']}';
-        }
-      }
-
-      return null;
     }
+    DebugLogger.info(_logTag, structureBuf.toString().trimRight());
 
-    void addResult(String bucket, dynamic item, Map raw) {
-      if (acceptedCount >= requestedLimit) return;
+    String? type;
 
-      final id = getItemId(raw);
+    int shelfIndex = 0;
+    for (var res in results) {
+      String category;
+      // YouTube Music's current response shape (as of 2026-06) does NOT
+      // group search results by category in shelves. Instead,
+      // `sectionListRenderer.contents` is a flat list where:
+      //   - element 0 is a `musicCardShelfRenderer` (the "Top result")
+      //   - elements 1..N are each a single `itemSectionRenderer` whose
+      //     inner `contents[0]` is a `musicResponsiveListItemRenderer`
+      // Each item must be classified client-side using
+      // [classifySearchResultBucket] (pageType + flexColumns[1] fallback).
+      //
+      // We don't go through `_unwrapShelf` here because the items are
+      // NOT inside a shelf renderer — the `itemSectionRenderer` directly
+      // holds the `musicResponsiveListItemRenderer`. We extract the item
+      // directly and fall back to `_unwrapShelf` only when the structure
+      // is the legacy shelf-wrapped shape.
 
-      // Deduplicate only when the API gives us a stable ID.
-      if (id != null && !seenIds.add(id)) {
-        return;
+      final Map<String, dynamic>? rawItem;
+      final String? sourceKey; // for diagnostic logging only
+
+      if (res is Map &&
+          res['itemSectionRenderer'] is Map &&
+          (res['itemSectionRenderer'] as Map)['contents'] is List) {
+        // New shape: itemSectionRenderer.contents[0].musicResponsiveListItemRenderer
+        final isr = res['itemSectionRenderer'] as Map;
+        final inner = isr['contents'] as List;
+        Map<String, dynamic>? found;
+        for (final c in inner) {
+          if (c is Map) {
+            final item = c['musicResponsiveListItemRenderer'];
+            if (item is Map) {
+              found = Map<String, dynamic>.from(item);
+              break;
+            }
+          }
+        }
+        rawItem = found;
+        sourceKey = 'itemSectionRenderer';
+      } else if (res is Map && res['musicCardShelfRenderer'] is Map) {
+        // Top result card. The actual item data is not in
+        // `musicResponsiveListItemRenderer` — it lives in the card
+        // itself. For now we skip the card (the title/subtitle are
+        // already shown by the card UI). Could be extended to extract
+        // the underlying item if needed.
+        DebugLogger.info(
+          _logTag,
+          'shelf[$shelfIndex] TopResult card: '
+          'title="${nav(res['musicCardShelfRenderer'], ['title', 'runs', 0, 'text'])}" '
+          'subtitle="${nav(res['musicCardShelfRenderer'], ['subtitle', 'runs', 0, 'text'])}"',
+        );
+        rawItem = null;
+        sourceKey = 'musicCardShelfRenderer';
+      } else {
+        // Legacy shape: a real shelf. Use _unwrapShelf as a fallback.
+        final unwrapped = _unwrapShelf(res);
+        final shelfBody = unwrapped?.$2;
+        if (unwrapped != null && shelfBody != null) {
+          rawItem = _extractSingleItem(
+              Map<String, dynamic>.from(shelfBody), unwrapped.$1!);
+        } else {
+          rawItem = null;
+        }
+        sourceKey = 'legacy-shelf';
       }
 
-      final list = searchResults.putIfAbsent(
-        bucket,
-        () => <dynamic>[],
-      ) as List<dynamic>;
+      DebugLogger.debug(
+        _logTag,
+        'shelf[$shelfIndex] keys=${res.keys.toList()} source=$sourceKey itemFound=${rawItem != null}',
+      );
 
-      list.add(item);
-      acceptedCount++;
-    }
+      if (rawItem == null) {
+        shelfIndex++;
+        continue;
+      }
 
-    for (final section in sectionContents) {
-      if (acceptedCount >= requestedLimit) break;
-      if (section is! Map) continue;
-
-      final itemSection = section['itemSectionRenderer'];
-
-      if (itemSection is Map &&
-          itemSection['contents'] is List) {
-        final inner = itemSection['contents'] as List;
-
-        for (final entry in inner) {
-          if (acceptedCount >= requestedLimit) break;
-          if (entry is! Map) continue;
-
-          final renderer =
-              entry['musicResponsiveListItemRenderer'];
-
-          if (renderer is! Map) continue;
-
-          final raw = Map<String, dynamic>.from(renderer);
-
-          final typed = parseSearchResult(
-            raw,
+      // Filtered path: we just use the existing logic (parse all items
+      // from the shelf body and bucket by shelf title). Skip per-item
+      // classification here.
+      if (filter != null) {
+        // For filtered, fall through to the old logic via _unwrapShelf.
+        final unwrapped = _unwrapShelf(res);
+        final shelfBody = unwrapped?.$2;
+        if (unwrapped != null && shelfBody != null) {
+          final mixedItems = parseSearchResults(
+            shelfBody['contents'],
             const ['artist', 'playlist', 'song', 'video', 'station'],
-            null,
+            type,
             'mixed',
           );
-
-          if (typed == null) continue;
-
-          if (filter != null) {
-            // The filtered endpoint is already constrained to the requested
-            // type. Always store it under the UI's expected title.
-            final bucket = _searchFilterToTitle(filter);
-
-            if (bucket != null) {
-              addResult(bucket, typed, raw);
-            }
-          } else {
-            final bucket = classifySearchResultBucket(raw);
-            if (bucket == null) continue;
-
-            final finalBucket = bucket == 'Featured playlists'
-                ? (refinePlaylistBucket(raw) ?? 'Featured playlists')
-                : bucket;
-
-            addResult(finalBucket, typed, raw);
+          final types = <String, int>{};
+          for (final i in mixedItems) {
+            types[i.runtimeType.toString()] =
+                (types[i.runtimeType.toString()] ?? 0) + 1;
           }
+          DebugLogger.debug(
+            _logTag,
+            'shelf[$shelfIndex] (filtered) parsed: total=${mixedItems.length} byType=$types',
+          );
+          category = nav(shelfBody, title_text) ?? 'mixed';
+          searchResults[category] = mixedItems;
         }
-
+        shelfIndex++;
         continue;
       }
 
-      // Top-result card is rendered separately and should not be counted as
-      // one of the regular result lists.
-      if (section['musicCardShelfRenderer'] is Map) {
-        continue;
-      }
-
-      // Legacy shelf structure.
-      final unwrapped = _unwrapShelf(section);
-      final shelfBody = unwrapped?.$2;
-
-      if (unwrapped != null &&
-          shelfBody != null &&
-          shelfBody['contents'] is List) {
-        final parsed = parseSearchResults(
-          shelfBody['contents'],
-          const ['artist', 'playlist', 'song', 'video', 'station'],
-          null,
-          'mixed',
+      // Unfiltered path: parse + classify + bucket.
+      final typed = parseSearchResult(
+        rawItem,
+        const ['artist', 'playlist', 'song', 'video', 'station'],
+        null,
+        'mixed',
+      );
+      if (typed == null) {
+        DebugLogger.debug(
+          _logTag,
+          'shelf[$shelfIndex] parseSearchResult returned null',
         );
-
-        final bucket = filter != null
-            ? _searchFilterToTitle(filter)
-            : (nav(shelfBody, title_text)?.toString() ?? 'mixed');
-
-        if (bucket != null) {
-          for (final item in parsed) {
-            if (acceptedCount >= requestedLimit) break;
-
-            // Legacy parsed objects may not expose their source ID here.
-            // Keep them rather than incorrectly dropping valid results.
-            final list = searchResults.putIfAbsent(
-              bucket,
-              () => <dynamic>[],
-            ) as List<dynamic>;
-
-            list.add(item);
-            acceptedCount++;
-          }
-        }
+        shelfIndex++;
+        continue;
       }
+
+      final bucket = classifySearchResultBucket(rawItem);
+      if (bucket == null) {
+        DebugLogger.debug(
+          _logTag,
+          'shelf[$shelfIndex] could not classify item, '
+          'type=${typed.runtimeType}',
+        );
+        shelfIndex++;
+        continue;
+      }
+      final finalBucket = bucket == 'Featured playlists'
+          ? (refinePlaylistBucket(rawItem) ?? 'Featured playlists')
+          : bucket;
+
+      // Cap at 10 per bucket.
+      if (searchResults.containsKey(finalBucket) &&
+          (searchResults[finalBucket] as List).length >= 10) {
+        shelfIndex++;
+        continue;
+      }
+      searchResults.putIfAbsent(finalBucket, () => <dynamic>[]);
+      (searchResults[finalBucket] as List).add(typed);
+
+      DebugLogger.info(
+        _logTag,
+        'shelf[$shelfIndex] classified: ${typed.runtimeType} -> "$finalBucket"',
+      );
+      shelfIndex++;
     }
+
+    // Final summary: keys, item counts, and any orphan buckets.
+    final summary = <String, int>{};
+    var orphans = 0;
+    searchResults.forEach((k, v) {
+      if (k == 'searchEndpoint' || k == 'params') return;
+      final n = v is List ? v.length : 0;
+      summary[k] = n;
+      if (k.toString().startsWith('_orphan_')) orphans += n;
+    });
+    DebugLogger.info(
+      _logTag,
+      'search() returning searchResults keys=${searchResults.keys.toList()} '
+      'counts=$summary orphans=$orphans',
+    );
 
     return searchResults;
-  }
-
-  String? _searchFilterToTitle(String filter) {
-    switch (filter) {
-      case 'songs':
-        return 'Songs';
-      case 'videos':
-        return 'Videos';
-      case 'albums':
-        return 'Albums';
-      case 'artists':
-        return 'Artists';
-      case 'playlists':
-        return 'Playlists';
-      case 'community_playlists':
-        return 'Community playlists';
-      case 'featured_playlists':
-        return 'Featured playlists';
-      default:
-        return null;
-    }
   }
 
   /// Resolves an element from `sectionListRenderer.contents` to the actual
