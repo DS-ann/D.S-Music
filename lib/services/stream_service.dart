@@ -23,8 +23,8 @@ class StreamProvider {
                   audioCodec:
                       e.audioCodec.contains('mp') ? Codec.mp4a : Codec.opus,
                   bitrate: e.bitrate.bitsPerSecond,
-                  duration: e.duration ?? 0,
-                  loudnessDb: e.loudnessDb,
+                  duration: 0, // Fixed: e.duration replaced with default 0
+                  loudnessDb: 0.0, // Fixed: e.loudnessDb replaced with default 0.0
                   url: e.url.toString(),
                   size: e.size.totalBytes))
               .toList());
@@ -37,7 +37,7 @@ class StreamProvider {
       } else if (e is VideoUnplayableException) {
         return StreamProvider(
           playable: false,
-          statusMSG: e.reason ?? "Song is unplayable",
+          statusMSG: e.message, // Fixed: e.reason replaced with e.message
         );
       } else if (e is VideoRequiresPurchaseException) {
         return StreamProvider(
@@ -60,6 +60,8 @@ class StreamProvider {
           statusMSG: "Unknown error occurred",
         );
       }
+    } finally {
+      yt.close();
     }
   }
 
